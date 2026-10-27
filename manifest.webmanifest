@@ -1,0 +1,19 @@
+{
+  "name": "SAIL VR: Seas of Sail (Meta Quest 3S)",
+  "short_name": "SAIL VR",
+  "description": "Open-world pirate sailing, Skull Cave Island, Lava Island, and skeleton raids built for Meta Quest 3S.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#061826",
+  "theme_color": "#f59e0b",
+  "ovr_package_name": "com.piratevrstudios.seasofsail",
+  "icons": [
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

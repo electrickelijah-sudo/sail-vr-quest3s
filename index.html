@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAIL VR: Seas of Sail — Meta Quest 3S VR</title>
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" href="./icon-512.png" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #061826; color: #f8fafc; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+    #hud {
+      position: fixed; top: 16px; left: 16px; z-index: 10;
+      background: rgba(8, 24, 38, 0.86); border: 2px solid #f59e0b; border-radius: 14px;
+      padding: 16px 20px; max-width: 520px; backdrop-filter: blur(8px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+    }
+    #hud h1 { font-size: 20px; color: #fbbf24; margin-bottom: 6px; }
+    #hud p { font-size: 14px; line-height: 1.45; color: #e2e8f0; margin-bottom: 6px; }
+    #stats {
+      margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(251, 191, 36, 0.35);
+      font-weight: 700; color: #38bdf8; font-size: 14px;
+    }
+    #banner {
+      margin-top: 8px; padding: 8px 12px; border-radius: 8px;
+      background: rgba(245, 158, 11, 0.22); color: #fde68a; font-weight: 600; font-size: 14px;
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="hud">
+    <h1>🏴‍☠️ SAIL VR: Seas of Sail (Meta Quest 3S)</h1>
+    <p><strong>On Meta Quest 3S:</strong> Click the green <strong>"ENTER VR"</strong> button at the bottom of the screen!</p>
+    <p>🥽 <strong>Quest 3S Touch Controls:</strong><br/>
+       • <strong>Left Stick:</strong> Walk / Sail Ship &nbsp;|&nbsp; <strong>Right Stick:</strong> Turn<br/>
+       • <strong>Grip Button (or [E]):</strong> Grab / Release Ship Helm Wheel<br/>
+       • <strong>Trigger / Swing Right Hand:</strong> Slash Pirate Cutlass<br/>
+       • <strong>A / X Button (or [F]):</strong> Vault / Skull Raid Altar / Diamond Chest</p>
+    <div id="stats">💰 Gold: <span id="gold">500</span> | 💀 Skulls: <span id="skulls">1/1/0</span> | 🗝️ Keys: <span id="keys">0</span> | 📍 <span id="island">Isla Fortuna (Port)</span></div>
+    <div id="banner">Loading your Blender SAIL VR World (SAIL_VR_Quest3S_World.glb)...</div>
+  </div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { VRButton } from 'three/addons/webxr/VRButton.js';
+    import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x52a8e8);
+    scene.fog = new THREE.FogExp2(0x68b5eb, 0.00075);
+
+    const camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.1, 3500);
+
+    // Player Rig (moves in 3D space for both Quest 3S VR & Desktop)
+    const playerRig = new THREE.Group();
+    playerRig.position.set(0, 3.2, -26);
+    playerRig.add(camera);
+    scene.add(playerRig);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.xr.enabled = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+    document.body.appendChild(renderer.domElement);
+
+    const vrBtn = VRButton.createButton(renderer);
+    vrBtn.style.background = '#16a34a';
+    vrBtn.style.border = '3px solid #fde047';
+    vrBtn.style.fontWeight = 'bold';
+    vrBtn.style.fontSize = '18px';
+    vrBtn.style.padding = '16px 28px';
+    vrBtn.style.opacity = '1';
+    document.body.appendChild(vrBtn);
+
+    // Golden Hour Tropical Lighting
+    const hemi = new THREE.HemisphereLight(0xbbe6ff, 0x3b4d3b, 1.35);
+    scene.add(hemi);
+
+    const sun = new THREE.DirectionalLight(0xfff1d0, 2.4);
+    sun.position.set(220, 340, -180);
+    scene.add(sun);
+
+    // Animated Ocean Plane fallback & shimmer
+    const oceanGeo = new THREE.PlaneGeometry(3200, 3200, 96, 96);
+    oceanGeo.rotateX(-Math.PI / 2);
+    const oceanMat = new THREE.MeshStandardMaterial({
+      color: 0x08729e,
+      roughness: 0.18,
+      metalness: 0.15
+    });
+    const oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
+    oceanMesh.position.y = -0.15;
+    scene.add(oceanMesh);
+
+    // Quest 3S Right-Hand Pirate Cutlass Sword + Left-Hand 3D Wrist HUD
+    const controllerRight = renderer.xr.getController(1);
+    const controllerLeft = renderer.xr.getController(0);
+    playerRig.add(controllerRight);
+    playerRig.add(controllerLeft);
+
+    // Build Pirate Cutlass Mesh on Right Controller
+    const cutlassGroup = new THREE.Group();
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.03, 0.06, 0.78),
+      new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.2 })
+    );
+    blade.position.set(0, 0.02, -0.42);
+    const guard = new THREE.Mesh(
+      new THREE.TorusGeometry(0.08, 0.018, 10, 20),
+      new THREE.MeshStandardMaterial({ color: 0xf59e0b, metalness: 0.9, roughness: 0.25 })
+    );
+    guard.position.set(0, 0, -0.04);
+    cutlassGroup.add(blade, guard);
+    controllerRight.add(cutlassGroup);
+
+    // 3D Wrist Canvas HUD on Left Controller for inside Meta Quest 3S
+    const hudCanvas = document.createElement('canvas');
+    hudCanvas.width = 512;
+    hudCanvas.height = 256;
+    const hudCtx = hudCanvas.getContext('2d');
+    const hudTex = new THREE.CanvasTexture(hudCanvas);
+    const wristHud = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.38, 0.19),
+      new THREE.MeshBasicMaterial({ map: hudTex, transparent: true })
+    );
+    wristHud.position.set(0, 0.12, -0.08);
+    wristHud.rotation.x = -Math.PI / 4;
+    controllerLeft.add(wristHud);
+
+    // Playable Ship Group (steerable across the ocean!)
+    const shipGroup = new THREE.Group();
+    shipGroup.position.set(-14, 0.2, -16);
+    scene.add(shipGroup);
+
+    const shipDeck = new THREE.Mesh(
+      new THREE.BoxGeometry(6.5, 1.4, 15),
+      new THREE.MeshStandardMaterial({ color: 0x7c4a24, roughness: 0.75 })
+    );
+    shipDeck.position.y = 0.8;
+    shipGroup.add(shipDeck);
+
+    const helmWheel = new THREE.Mesh(
+      new THREE.TorusGeometry(0.65, 0.08, 12, 24),
+      new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.4, metalness: 0.4 })
+    );
+    helmWheel.position.set(0, 2.2, -4.2);
+    shipGroup.add(helmWheel);
+
+    // Load the Complete Blender SAIL VR World GLB
+    const loader = new GLTFLoader();
+    loader.load(
+      './SAIL_VR_Quest3S_World.glb',
+      (gltf) => {
+        scene.add(gltf.scene);
+        setNotification('World Loaded! Tap green "ENTER VR" button at the bottom to play on Meta Quest 3S!');
+      },
+      (xhr) => {
+        if (xhr.total) {
+          const pct = Math.round((xhr.loaded / xhr.total) * 100);
+          document.getElementById('banner').textContent = `Loading SAIL VR 3D World... ${pct}%`;
+        }
+      },
+      (err) => {
+        console.warn(err);
+        setNotification('Ready! Tap green "ENTER VR" button to enter VR!');
+      }
+    );
+
+    // Official SAIL VR Islands for HUD & Interactions
+    const islands = [
+      { name: 'Isla Fortuna (Shipwreck Port)', pos: new THREE.Vector3(0, 2, 0), type: 'SAFE_HUB' },
+      { name: 'The Skull Cave Island', pos: new THREE.Vector3(-105, 2, -92), type: 'DIAMOND_CHEST' },
+      { name: 'The Lava Island (One-Eyed Wendy)', pos: new THREE.Vector3(150, 3, -120), type: 'LAVA_BOSS' },
+      { name: 'Bronze Skull Island (NE)', pos: new THREE.Vector3(221, 3, -162.5), type: 'BRONZE_SKULL' },
+      { name: 'Silver Skull Fortress (NW)', pos: new THREE.Vector3(-312, 3, -247), type: 'SILVER_SKULL' },
+      { name: 'Gold Skull Boss Citadel (South)', pos: new THREE.Vector3(32.5, 3, 429), type: 'GOLD_SKULL' },
+      { name: "Dead Man's Island (PvP Arena)", pos: new THREE.Vector3(-351, 3, 13), type: 'PVP_ARENA' }
+    ];
+
+    let gold = 500, bronzeSkulls = 1, silverSkulls = 1, goldSkulls = 0, diamondKeys = 0, chests = 0;
+    let isSteeringShip = false, sailOpenness = 0.0, rudder = 0.0;
+    let statusMsg = 'Tap ENTER VR at bottom! Grip/[E] = Steer Ship, A/[F] = Interact!';
+    let snapReady = true, prevGrip = false, prevAct = false;
+
+    function setNotification(msg) {
+      statusMsg = msg;
+      document.getElementById('banner').textContent = msg;
+      updateWristHud();
+    }
+
+    function getNearestIsland() {
+      let best = islands[0], minDist = Infinity;
+      for (const isl of islands) {
+        const d = playerRig.position.distanceTo(isl.pos);
+        if (d < minDist) { minDist = d; best = isl; }
+      }
+      return { island: best, dist: Math.round(minDist) };
+    }
+
+    function updateWristHud() {
+      const { island, dist } = getNearestIsland();
+      document.getElementById('gold').textContent = gold;
+      document.getElementById('skulls').textContent = `${bronzeSkulls}/${silverSkulls}/${goldSkulls}`;
+      document.getElementById('keys').textContent = diamondKeys;
+      document.getElementById('island').textContent = `${island.name} (${dist}m)`;
+
+      hudCtx.fillStyle = 'rgba(8, 24, 38, 0.92)';
+      hudCtx.fillRect(0, 0, 512, 256);
+      hudCtx.strokeStyle = '#f59e0b';
+      hudCtx.lineWidth = 6;
+      hudCtx.strokeRect(4, 4, 504, 248);
+
+      hudCtx.fillStyle = '#fbbf24';
+      hudCtx.font = 'bold 26px sans-serif';
+      hudCtx.fillText('SAIL VR: SEAS OF SAIL', 20, 40);
+
+      hudCtx.fillStyle = '#38bdf8';
+      hudCtx.font = 'bold 22px sans-serif';
+      hudCtx.fillText(`Gold: ${gold} | Keys: ${diamondKeys} | Chests: ${chests}`, 20, 80);
+      hudCtx.fillText(`Nearest: ${island.name} (${dist}m)`, 20, 115);
+
+      hudCtx.fillStyle = '#4ade80';
+      hudCtx.fillText(isSteeringShip ? `SAILING (Sail ${Math.round(sailOpenness*100)}%)` : 'ON FOOT (Grip = Ship Wheel)', 20, 152);
+
+      hudCtx.fillStyle = '#fde68a';
+      hudCtx.font = '18px sans-serif';
+      hudCtx.fillText(statusMsg.slice(0, 48), 20, 200);
+      hudCtx.fillText(statusMsg.slice(48, 96), 20, 226);
+      hudTex.needsUpdate = true;
+    }
+
+    function interactNearest() {
+      const { island, dist } = getNearestIsland();
+      if (dist > 95) {
+        setNotification(`Sail closer to ${island.name} (${dist}m) to interact!`);
+        return;
+      }
+      if (island.type === 'SAFE_HUB') {
+        if (chests > 0) {
+          const earned = chests * 750;
+          gold += earned; chests = 0;
+          setNotification(`Sold Chests at Isla Fortuna Vault for +${earned} Gold!`);
+        } else {
+          bronzeSkulls++;
+          setNotification('Claimed a Bronze Raid Skull at Isla Fortuna! Sail to Bronze Skull Island!');
+        }
+      } else if (island.type === 'BRONZE_SKULL') {
+        chests++; diamondKeys++;
+        setNotification('Bronze Skull Raid Cleared! +1 Loot Chest & +1 Diamond Key!');
+      } else if (island.type === 'SILVER_SKULL') {
+        chests += 2; diamondKeys++;
+        setNotification('Silver Skull Raid Cleared! +2 Loot Chests & +1 Diamond Key!');
+      } else if (island.type === 'LAVA_BOSS') {
+        diamondKeys++; chests += 2;
+        setNotification('Defeated One-Eyed Wendy on Lava Island! +1 Molten Diamond Key!');
+      } else if (island.type === 'DIAMOND_CHEST') {
+        if (diamondKeys > 0) {
+          diamondKeys--; gold += 5000; goldSkulls++;
+          setNotification('UNLOCKED SKULL CAVE DIAMOND CHEST! +5,000 Gold & +1 Gold Skull!');
+        } else {
+          setNotification('Need a Diamond Key from Lava Island or a Skull Raid to open!');
+        }
+      } else if (island.type === 'GOLD_SKULL') {
+        gold += 10000;
+        setNotification('GOLD SKULL BOSS DEFEATED! +10,000 Gold Bounty!');
+      }
+    }
+
+    // Keyboard fallback controls
+    const keysDown = {};
+    window.addEventListener('keydown', (e) => {
+      keysDown[e.code] = true;
+      if (e.code === 'KeyE') {
+        isSteeringShip = !isSteeringShip;
+        setNotification(isSteeringShip ? 'Grabbed Ship Helm! Use Left Stick / WASD to Sail!' : 'Released Ship Helm!');
+      }
+      if (e.code === 'KeyF') interactNearest();
+    });
+    window.addEventListener('keyup', (e) => { keysDown[e.code] = false; });
+
+    const clock = new THREE.Clock();
+
+    renderer.setAnimationLoop(() => {
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const elapsed = clock.getElapsedTime();
+
+      // Gentle ocean wave motion on ship
+      shipGroup.position.y = 0.2 + Math.sin(elapsed * 1.6) * 0.18;
+      shipGroup.rotation.z = Math.sin(elapsed * 1.3) * 0.03;
+
+      let moveX = (keysDown['KeyD'] ? 1 : 0) - (keysDown['KeyA'] ? 1 : 0);
+      let moveY = (keysDown['KeyW'] ? 1 : 0) - (keysDown['KeyS'] ? 1 : 0);
+      let gripPressed = false;
+      let actPressed = false;
+
+      // Read Meta Quest 3S WebXR Gamepads (Left & Right Touch Controllers)
+      const session = renderer.xr.getSession();
+      if (session) {
+        for (const source of session.inputSources) {
+          if (!source.gamepad) continue;
+          const gp = source.gamepad;
+          const axX = gp.axes[2] !== undefined ? gp.axes[2] : gp.axes[0] || 0;
+          const axY = gp.axes[3] !== undefined ? gp.axes[3] : gp.axes[1] || 0;
+
+          if (source.handedness === 'left') {
+            if (Math.abs(axX) > 0.1 || Math.abs(axY) > 0.1) {
+              moveX = axX;
+              moveY = -axY;
+            }
+          } else if (source.handedness === 'right') {
+            if (Math.abs(axX) > 0.65 && snapReady) {
+              playerRig.rotation.y -= Math.sign(axX) * (Math.PI / 4);
+              snapReady = false;
+            } else if (Math.abs(axX) < 0.25) {
+              snapReady = true;
+            }
+          }
+
+          if (gp.buttons[1] && gp.buttons[1].pressed) gripPressed = true;
+          if ((gp.buttons[4] && gp.buttons[4].pressed) || (gp.buttons[0] && gp.buttons[0].pressed)) actPressed = true;
+        }
+      }
+
+      if (gripPressed && !prevGrip) {
+        isSteeringShip = !isSteeringShip;
+        setNotification(isSteeringShip ? 'Grabbed Ship Helm! Push Left Stick to Sail!' : 'Released Ship Helm!');
+      }
+      prevGrip = gripPressed;
+
+      if (actPressed && !prevAct) {
+        interactNearest();
+      }
+      prevAct = actPressed;
+
+      if (isSteeringShip) {
+        sailOpenness = Math.max(0, Math.min(1, sailOpenness + moveY * 0.5 * dt));
+        rudder = moveX;
+        helmWheel.rotation.z = -rudder * 2.2;
+
+        shipGroup.rotation.y -= rudder * 0.55 * Math.max(0.3, sailOpenness) * dt;
+        const shipFwd = new THREE.Vector3(0, 0, -1).applyQuaternion(shipGroup.quaternion);
+        shipGroup.position.addScaledVector(shipFwd, sailOpenness * 16.0 * dt);
+
+        playerRig.position.copy(shipGroup.position).add(new THREE.Vector3(0, 2.8, 0));
+      } else {
+        const fwd = new THREE.Vector3();
+        camera.getWorldDirection(fwd);
+        fwd.y = 0;
+        fwd.normalize();
+        const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize();
+
+        playerRig.position.addScaledVector(right, moveX * 9.0 * dt);
+        playerRig.position.addScaledVector(fwd, moveY * 9.0 * dt);
+      }
+
+      updateWristHud();
+      renderer.render(scene, camera);
+    });
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
